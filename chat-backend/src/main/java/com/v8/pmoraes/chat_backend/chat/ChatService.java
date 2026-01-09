@@ -7,9 +7,12 @@ import com.v8.pmoraes.chat_backend.exception.AIException;
 import com.v8.pmoraes.chat_backend.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -21,6 +24,7 @@ import java.util.UUID;
 public class ChatService {
     
     private final ChatClient chatClient;
+    private final VectorStore vectorStore;
     
     // System template for code-assistant scope
     private static final String SYSTEM_TEMPLATE = """
@@ -50,8 +54,9 @@ public class ChatService {
         - Structure complex answers with clear sections
         """;
     
-    public ChatService(ChatClient chatClient) {
-        this.chatClient = chatClient;
+    public ChatService(ChatClient.Builder chatClient, VectorStore vectorStore) {
+        this.chatClient = chatClient.defaultSystem(SYSTEM_TEMPLATE).build();
+        this.vectorStore = vectorStore;
     }
     
     /**
@@ -68,7 +73,6 @@ public class ChatService {
             
             // Call LLM with template and context
             String response = chatClient.prompt()
-                    .system(SYSTEM_TEMPLATE)
                     .user(request.getMessage())
                     .call()
                     .content();
@@ -110,7 +114,6 @@ public class ChatService {
                     """, ragContext, request.getMessage());
             
             String response = chatClient.prompt()
-                    .system(SYSTEM_TEMPLATE)
                     .user(augmentedPrompt)
                     .call()
                     .content();
@@ -206,6 +209,91 @@ public class ChatService {
                     ErrorCode.LLM_ERROR.getCode(),
                     "Failed to process uploaded file"
             );
+        }
+    }
+
+    /**
+     * Store file content in pgvector for RAG retrieval (if not already stored).
+     * Chunks the content and creates embeddings for similarity search.
+     * Reuses existing embeddings for the same file in a conversation.
+     * 
+     * @param fileContent The content to store
+     * @param fileName The name of the file for metadata
+     * @param conversationId The conversation ID for context grouping
+     * @return true if content was stored, false if already existed
+     */
+    public boolean storeInPgVector(String fileContent, String fileName, String conversationId) {
+        try {
+            log.info("Processing file for pgvector: {} in conversation: {}", fileName, conversationId);
+            
+            // Check if this file is already stored for this conversation
+            // This prevents duplicate embeddings and reduces costs
+            List<Document> existing = vectorStore.similaritySearch(fileName, 1);
+            boolean alreadyStored = existing.stream()
+                    .anyMatch(doc -> doc.getMetadata() != null &&
+                            fileName.equals(doc.getMetadata().get("fileName")) &&
+                            conversationId.equals(doc.getMetadata().get("conversationId")));
+            
+            if (alreadyStored) {
+                log.info("File {} already stored in pgvector for conversation {}. Reusing existing embeddings.", 
+                        fileName, conversationId);
+                return false; // Reusing existing content
+            }
+            
+            log.info("Storing new file content in pgvector: {} for conversation: {}", fileName, conversationId);            
+            Document document = new Document(fileContent);
+
+            document.getMetadata().put("fileName", fileName);
+            document.getMetadata().put("conversationId", conversationId);
+            document.getMetadata().put("timestamp", String.valueOf(System.currentTimeMillis()));
+            
+            vectorStore.add(List.of(document));            
+            log.info("Successfully stored {} characters in pgvector", fileContent.length());
+            return true; // Content was newly stored
+            
+        } catch (Exception e) {
+            log.error("Error storing content in pgvector: {}", e.getMessage(), e);
+            throw new AIException(
+                    ErrorCode.RAG_ERROR.getCode(),
+                    "Failed to store content in vector database: " + e.getMessage()
+            );
+        }
+    }
+
+    /**
+     * Retrieve relevant context from pgvector for a given query.
+     * Uses semantic similarity search to find the most relevant documents.
+     * 
+     * @param query The search query
+     * @param topK Number of top results to retrieve
+     * @return Concatenated relevant context from pgvector
+     */
+    public String retrieveFromPgVector(String query) {
+        try {
+            log.info("Retrieving context from pgvector for query: {}", query);
+            
+            // Search for similar documents in pgvector
+            List<Document> results = vectorStore.similaritySearch(query);
+            
+            if (results.isEmpty()) {
+                log.warn("No relevant documents found in pgvector for query: {}", query);
+                return "";
+            }
+            
+            // Concatenate the content from retrieved documents
+            StringBuilder context = new StringBuilder();
+            for (Document doc : results) {
+                context.append(doc.getText())
+                       .append("\n\n---\n\n");
+            }
+            
+            log.info("Retrieved {} documents from pgvector", results.size());
+            return context.toString();
+            
+        } catch (Exception e) {
+            log.error("Error retrieving from pgvector: {}", e.getMessage(), e);
+            // Don't throw - fall back to original context
+            return "";
         }
     }
 }

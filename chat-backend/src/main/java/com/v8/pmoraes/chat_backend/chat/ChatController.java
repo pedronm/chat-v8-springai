@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import java.util.UUID;
 
 /**
  * Controller for chat interactions.
@@ -23,20 +24,9 @@ import org.springframework.web.multipart.MultipartFile;
 public class ChatController {
 
     private final ChatService chatService;
-
-    /**
-     * Features implemented:
-     * ✓ LLM integration - ChatService with OpenAI
-     * ✓ Context with advisors - MessageChatMemoryAdvisor configured
-     * ✓ Template for reducing scope - System template in ChatService
-     * ✓ RAG ready - ProcessPromptWithRag method
-     * TODO: Composer with pgvector and its use in rag
-     * TODO: Agent endpoint with tools and MCP
-     */
     public ChatController(ChatService chatService) {
         this.chatService = chatService;
     }
-
     /**
      * Process a text chat prompt.
      * 
@@ -81,15 +71,27 @@ public class ChatController {
             // Extract content from file for RAG context
             String fileContent = chatService.extractFileContent(request);
             
+            // Store content in pgvector for future retrieval (one-time operation)
+            String conversationIdToUse = conversationId != null ? conversationId : UUID.randomUUID().toString();
+            chatService.storeInPgVector(fileContent, file.getOriginalFilename(), conversationIdToUse);
+            
+            // Retrieve ONLY relevant chunks from pgvector using semantic search
+            // This is more efficient than using the full file content
+            String pgvectorContext = chatService.retrieveFromPgVector(message);
+            
+            // Use pgvector context for the RAG - it contains only relevant chunks
+            // This significantly reduces token consumption compared to passing the full file
+            String ragContext = !pgvectorContext.isEmpty() ? pgvectorContext : fileContent;
+            
             // Create prompt request with user details
             ChatPromptRequest promptRequest = ChatPromptRequest.builder()
                     .message(message)
                     .userId(userId)
-                    .conversationId(conversationId)
+                    .conversationId(conversationIdToUse)
                     .build();
             
-            // Process prompt with RAG context from file
-            ChatResponse response = chatService.processPromptWithRag(promptRequest, fileContent);
+            // Process prompt with RAG context from pgvector (only relevant chunks)
+            ChatResponse response = chatService.processPromptWithRag(promptRequest, ragContext);
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
@@ -101,22 +103,6 @@ public class ChatController {
                             .build());
         }
     }
-
-    /**
-     * Agent endpoint for tool-based interactions.
-     * Will support MCP tools and advanced reasoning.
-     * 
-     * @param request The agent request
-     * @return Agent response with tool results
-     */
-    @PostMapping("/agent")
-    public ResponseEntity<ChatResponse> agent(@RequestBody ChatPromptRequest request) {
-        log.info("Received agent request: {}", request.getMessage());
-        // TODO: Implement agent functionality with tools and MCP
-        ChatResponse response = chatService.processPrompt(request);
-        return ResponseEntity.ok(response);
-    }
-
     /**
      * Health check endpoint.
      */
