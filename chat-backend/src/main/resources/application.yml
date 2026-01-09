@@ -1,0 +1,62 @@
+server:
+    port: 8080      
+    servlet:
+        context-path: /api
+
+spring:
+  docker:
+    compose:
+      enabled: true
+      file: docker-compose.yml
+  application:
+    name: chat-backend
+    description: AI-powered code assistant backend with RAG capabilities
+  
+  # Database Configuration for RAG Vector Store
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chat_db
+    username: admin
+    password: admin
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.7
+          max-tokens: 2048
+      embedding:
+        options:
+          model: text-embedding-3-small  
+    # PostgreSQL Vector Store Configuration
+    vector-store:
+      pgvector:
+        initialize-schema: true
+    
+  mvc:
+    cors:
+      allowed-origins: "*"
+      allowed-methods: GET, POST, PUT, DELETE, OPTIONS
+      allow-credentials: false
+      max-age: 3600
+
+logging:
+  level:
+    root: INFO
+    com.v8.pmoraes.chat_backend: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.web: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
