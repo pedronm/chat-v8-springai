@@ -77,16 +77,29 @@ public class ChatController {
                 .fileType(file.getContentType())
                 .build();
         
-        // TODO: Implement RAG file processing
-        // For now, process as regular prompt
-        ChatPromptRequest promptRequest = ChatPromptRequest.builder()
-                .message(message)
-                .userId(userId)
-                .conversationId(conversationId)
-                .build();
-        
-        ChatResponse response = chatService.processPrompt(promptRequest);
-        return ResponseEntity.ok(response);
+        try {
+            // Extract content from file for RAG context
+            String fileContent = chatService.extractFileContent(request);
+            
+            // Create prompt request with user details
+            ChatPromptRequest promptRequest = ChatPromptRequest.builder()
+                    .message(message)
+                    .userId(userId)
+                    .conversationId(conversationId)
+                    .build();
+            
+            // Process prompt with RAG context from file
+            ChatResponse response = chatService.processPromptWithRag(promptRequest, fileContent);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("Error processing file: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ChatResponse.builder()
+                            .success(false)
+                            .error(e.getMessage())
+                            .build());
+        }
     }
 
     /**

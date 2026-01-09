@@ -2,11 +2,13 @@ package com.v8.pmoraes.chat_backend.chat;
 
 import com.v8.pmoraes.chat_backend.dto.ChatPromptRequest;
 import com.v8.pmoraes.chat_backend.dto.ChatResponse;
+import com.v8.pmoraes.chat_backend.dto.ChatWithFileRequest;
 import com.v8.pmoraes.chat_backend.exception.AIException;
 import com.v8.pmoraes.chat_backend.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -160,5 +162,50 @@ public class ChatService {
                 .messageId(UUID.randomUUID().toString())
                 .success(success)
                 .build();
+    }
+
+    /**
+     * Extract content from an uploaded file for RAG processing.
+     * Supports: TXT, JSON, XML, and other text-based formats
+     * 
+     * @param request The chat request with file
+     * @return Extracted file content as String
+     * @throws AIException if file extraction fails
+     */
+    public String extractFileContent(ChatWithFileRequest request) {
+        try {
+            String originalFilename = request.getFile().getOriginalFilename();
+            String contentType = request.getFileType();
+            
+            log.info("Extracting content from file: {} ({})", originalFilename, contentType);
+            
+            // Convert file bytes to String
+            String fileContent = new String(request.getFile().getBytes());
+            
+            if (fileContent.trim().isEmpty()) {
+                throw new AIException(
+                        ErrorCode.INVALID_MESSAGE.getCode(),
+                        "File is empty or could not be read"
+                );
+            }
+            
+            log.info("Successfully extracted {} characters from file", fileContent.length());
+            return fileContent;
+            
+        } catch (IOException e) {
+            log.error("Error reading file: {}", e.getMessage(), e);
+            throw new AIException(
+                    ErrorCode.LLM_ERROR.getCode(),
+                    "Failed to read uploaded file: " + e.getMessage()
+            );
+        } catch (AIException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error extracting file content: {}", e.getMessage(), e);
+            throw new AIException(
+                    ErrorCode.LLM_ERROR.getCode(),
+                    "Failed to process uploaded file"
+            );
+        }
     }
 }
