@@ -68,7 +68,7 @@ export default function Chat() {
         setIsLoading(false);
       }
     },
-    []
+    [userId, conversationId]
   );
 
   const handleNewChat = () => {

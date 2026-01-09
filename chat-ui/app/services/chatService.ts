@@ -20,7 +20,7 @@ export interface ChatResponse {
   error: string | null;
 }
 
-const API_BASE_URL = import.meta.env.REACT_APP_API_URL || 'http://localhost:8080';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 /**
  * Send a message to the chat backend and get a response

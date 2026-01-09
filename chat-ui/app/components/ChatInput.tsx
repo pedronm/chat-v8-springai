@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { sendMessageWithFile, generateMessageId } from '../services/chatService';
-import type { Message } from '../services/chatService';
+
+
 
 interface ChatInputProps {
   onSendMessage: (message: string, file?: File) => Promise<void>;

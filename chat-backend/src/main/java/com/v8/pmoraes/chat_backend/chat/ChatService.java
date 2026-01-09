@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -55,7 +56,10 @@ public class ChatService {
         """;
     
     public ChatService(ChatClient.Builder chatClient, VectorStore vectorStore) {
-        this.chatClient = chatClient.defaultSystem(SYSTEM_TEMPLATE).build();
+        this.chatClient = chatClient
+            .defaultAdvisors(QuestionAnswerAdvisor.builder(vectorStore).build())
+            .defaultSystem(SYSTEM_TEMPLATE)
+            .build();
         this.vectorStore = vectorStore;
     }
     
@@ -228,7 +232,7 @@ public class ChatService {
             
             // Check if this file is already stored for this conversation
             // This prevents duplicate embeddings and reduces costs
-            List<Document> existing = vectorStore.similaritySearch(fileName, 1);
+            List<Document> existing = vectorStore.similaritySearch(fileName);
             boolean alreadyStored = existing.stream()
                     .anyMatch(doc -> doc.getMetadata() != null &&
                             fileName.equals(doc.getMetadata().get("fileName")) &&
